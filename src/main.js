@@ -588,6 +588,7 @@ function songDto(song) {
     id: String(song.id), title: song.name || "", artists: artistRefs(song),
     album: album.id ? {id: String(album.id), name: album.name || ""} : null,
     durationMs: Number(song.dt || song.duration || 0),
+    publishTimeMs: Number(song.publishTime || album.publishTime || 0),
     artworkUrl: secureUrl(album.picUrl || album.blurPicUrl || ""),
     artworkThumbUrl: thumbUrl(album.picUrl || album.blurPicUrl || ""),
     playable: !(song.noCopyrightRcmd), trial: false
@@ -623,7 +624,7 @@ function albumDto(value, songs) {
     id: String(value.id || ""), name: value.name || "",
     artworkUrl: secureUrl(value.picUrl || value.blurPicUrl || ""),
     artworkThumbUrl: thumbUrl(value.picUrl || value.blurPicUrl || "", 300),
-    publishTimeMs: Number(value.publishTime || 0), description: value.description || "",
+    publishTimeMs: Number(value.publishTime || 0), releaseType: value.type || value.subType || "", description: value.description || "",
     trackCount: Number(value.size || value.trackCount || (songs || []).length),
     artists: artists.map(function (artist) {
       return {id: String(artist.id), name: artist.name || ""};
@@ -838,13 +839,19 @@ function playlistDetails(args) {
 }
 
 function artistDetails(args) {
+  var offset = Math.max(0, Number(args.cursor || 0)), limit = Math.min(100, Number(args.limit || 50));
+  var albumOffset = args.section === "albums" ? offset : 0;
   return Promise.all([
     weapi("v1/artist/" + args.id, {}),
-    weapi("artist/albums/" + args.id, {limit: 50, offset: 0, total: true})
+    weapi("artist/albums/" + args.id, {limit: limit, offset: albumOffset, total: true}),
+    args.section === "songs" ? weapi("v1/artist/songs", {id: Number(args.id), offset: offset, limit: limit, order: "hot", private_cloud: "true"}) : Promise.resolve(null)
   ]).then(function (values) {
-    var artistBody = values[0];
+    var songs = values[2] ? (values[2].songs || []) : (values[0].hotSongs || []);
     var albums = (values[1].hotAlbums || []).map(function (album) { return albumDto(album, []); });
-    return artistDto(artistBody.artist || {}, artistBody.hotSongs || [], albums);
+    var result = artistDto(values[0].artist || {}, songs, albums);
+    result.nextAlbumCursor = values[1].more && albums.length ? String(albumOffset + albums.length) : "";
+    result.nextSongCursor = songs.length && (args.section === "songs" ? values[2].more : result.songCount > songs.length) ? String((args.section === "songs" ? offset : 0) + songs.length) : "";
+    return result;
   });
 }
 
@@ -1453,7 +1460,24 @@ var togetherFeature = require("./together").create({
   account: account
 });
 
+// Read-only native comment pages. Existing cookies and the provider's encrypted transport are reused.
+function comments(args) {
+  var offset = Math.max(0, Number(args.cursor || 0));
+  var hot = args.sort === "hot";
+  return weapi("v1/resource/comments/R_SO_4_" + args.id,
+      {offset: offset, limit: 20, total: offset === 0, beforeTime: 0}).then(function (body) {
+    if (Number(body.code) !== 200) throw new Error("评论请求失败，请检查登录状态");
+    var rows = hot ? (body.hotComments || []) : (body.comments || []);
+    return {items: rows.slice(0, 20).map(function (row) {
+      return {id: String(row.commentId), author: String((row.user || {}).nickname || "音乐用户"),
+        content: String(row.content || ""), time: new Date(Number(row.time || 0)).toISOString().slice(0,16).replace("T"," ") + " UTC",
+        likeCount: Number(row.likedCount || 0)};
+    }), nextCursor: !hot && body.more && rows.length ? String(offset + rows.length) : ""};
+  });
+}
+
 module.exports = {handlers: {
+  comments: comments,
   hotSearch: hotSearch,
   searchSongs: searchSongs,
   searchAlbums: searchAlbums,

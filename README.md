@@ -1,3 +1,6 @@
+> 本仓库是 [TIMER-err/qplayer-netease-plugin](https://github.com/TIMER-err/qplayer-netease-plugin) 的定制分支，保留原项目署名与许可证。配套 [QPlayer 定制版](https://github.com/tengyuanxingxing/qplayer/releases) 使用。
+> 从 QPlayer 1.9.11-custom 起，可在“设置 → 插件”内直接安装或更新此仓库的独立签名版本，保持原插件 ID 与账户存储。
+
 # QPlayer 网易云音源插件
 
 <p><b>简体中文</b> · <a href="README.en.md">English</a></p>
